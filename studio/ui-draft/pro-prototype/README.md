@@ -1,0 +1,99 @@
+# DriveScene Studio workbench
+
+A freely accessible workbench with interaction timelines and exports. The local review page embeds the real workbench renderer and plays Lane change and Cut-in on Road, Roadworks on Elevated, Cut-in on Ramp Exit, Merge on Ramp Entrance, Left turn on Junction, and Oncoming car and Space taken in Indoor and Outdoor parking.
+
+- Open: `studio/ui-draft/pro-prototype.html` (served next to the workbench, so fonts and icons resolve)
+- Rebuild after editing: `python3 studio/ui-draft/pro-prototype/build.py`
+
+## How it is built
+
+| File | Role |
+|---|---|
+| `live-dom.json` | Snapshot of the live workbench DOM after render (2026-11-08). The snapshot omits the iframe; scene-preview.js mounts the real renderer at runtime. |
+| workbench CSS | `tokens.css`, `draft.css`, `inspector.css`, `guizang-trial.css`, `shell-v5.css`, read from this folder at build time, unchanged. |
+| `prototype.css` | Only the additions and the few overrides listed below. Values use `var(--ds-…)` except where noted. |
+| `prototype.js` | Workbench behaviour: menus, timeline, theme transition. |
+
+All interaction events, 4K still exports and video exports are available without sign-in or payment. Account state, checkout, provider integrations and their obsolete tests were retired on the author's request (2026-11-20). Old plan query parameters are ignored and removed from the address bar. The existing file name is retained for links.
+
+**Inspector** (revised 2026-11-08 evening, author review in conversation)
+- Groups, top to bottom: **Scene** (Camera, Lanes on Road, Type on Ramp), **Layers**, **Environment** (Weather), **Interaction** (Road, Elevated and Ramp), Export pinned at the bottom. The scene group is titled "Scene" so it does not repeat the scene name selected on the left. Weather stays in its own group across outdoor scenes, while Camera is kept per scene. Indoor parking omits Layers and Environment and has its own parked fleet. The open ramps expose Traffic and Weather because their layouts have no exterior building or tree layers.
+- Camera, Lanes, Type, Weather and Pass on put the label above the full-width options. Scene and Environment add a 10 px desktop or 8 px narrow-layout inset under the heading to align their first label visually with the first Interaction switch label. Labels sit 4 px above their options on desktop and 6 px on narrow layouts; consecutive fields use 12 px and 16 px respectively. Layers and Interaction keep their 36 px switch rows and 4 px row gap. Groups keep the existing 16 px, hairline, 16 px divider spacing.
+- **Events** use the same switch row as Layers. On Road, Cut-in and Lane change require four or six lanes. Switching between them retains the current road position, traffic, and view. A committed lateral move finishes before the new event starts. Selecting the running event again while another is queued cancels the queued event. The Ramp Entrance route change and parking restarts can begin a new setup when the current route cannot be reused. Refresh opens the selected scene at its starting frame with all interactions off.
+- **Road lane count** keeps the original animated road-width change during an interaction. Switching between four and six lanes preserves the replay time, camera and traffic plan. Two lanes disables interactions that require a neighboring lane in the same direction.
+- **Pass on** (Left / Right, default Left) sits directly under Roadworks, grouped by proximity (4 px to the switch, 12 px to the next event), not by indent, so every label and control keeps one column. It is always visible and always a live control. A route belongs to a run: playback, pause, scrubbing and replay keep it. Choosing the other side during Roadworks starts a new run from 0 on that side, in the same play state.
+- **Manual Camera switching** (2026-11-12, author request): all scene and event view picks use a 500 ms transition. Parking Low maps to its default camera and High to its raised camera. Orbit, orientation and screen composition share the transition phase; automatic event timing uses the policy below.
+- **Parked view** is a Camera preset in both parking scenes. It becomes available when the vehicle and parking camera settle. The current 3D vehicle moves from the settled framing to the Figma reference framing over 1.82 seconds. Driving assist replay returns to the settled view before starting the next maneuver. The preview keeps its 16:9 frame and the PNG and Camera JSON exports use the 1767 × 1090 reference ratio. The renderer loads when the preset is selected.
+- **Interaction Auto camera** (2026-11-12, author request): Roadworks, Lane change, Cut-in, Collision warning, AES and Ramp Merge reach the same High endpoint as their manual High pick. The prior intermediate raised pose is removed. Rise takes 1.5 s and return takes 1.4 s, using a smooth curve with zero endpoint velocity/acceleration. Rise and return triggers still follow their event; the High hold lasts until that event's return trigger. Roadworks starts the normal rise at 2.0 s (adjusted for Near/Far), independently of its indicator at 1.3 s, and holds High until both the actual merge and work-zone clearance are complete. An interacting cut-in can request an earlier rise. Traffic edits after clearance retain the original return clock. Parking and Junction left turn keep their existing camera choreography. Manual Low / High picks still take 500 ms. The trigger contract and per-event gaps are recorded in [Interaction camera specification](../interaction-camera-spec.md).
+- **Parking Traffic preparation** (2026-11-12): the first enable retains the current screen colour through shader recording, warm draws and the prepared handoff. Offscreen passes still warm, and the next live draw starts the existing fleet entry animation. Repeated enables preserve the active reveal. Camera, parking pose and route stay continuous.
+- **Parking interactions** (2026-11-12, author request): Oncoming car moves the vehicle left and forward, waits for the passing car to clear, then replans into the original bay. Space taken stops the vehicle, transfers the selected highlight as soon as the other car is consistently reversing toward the original bay, and moves once the other car’s rear axle enters that bay and the new route clears its moving footprint. The latter check uses simultaneous full-body poses with a speed-dependent margin. Amber follows the active constraint and releases after clearance. Both use the existing timeline, pause, seek, replay and Auto / Low / High camera controls. Outdoor parking restores the user’s Traffic setting after the event. The timeline and video renderer use the planned run length. Routes are controlled demo scenarios checked against full vehicle footprints, parked cars and columns; they are not a general live parking planner. Planning and actor helpers load from `parking-interactions.bundle.js` on demand, with readiness awaited before the first event is configured. The raw startup runtime budget increases by 10 KB to 1,260,000 bytes; the compressed limit remains 500 KB.
+- **Camera** during an event (revised 2026-11-11, author review in conversation): every event offers Auto / Low / High, Junction included. Auto (default) follows the event; Low and High hold a fixed camera so designers can match their own HMI view. The "Follows event" status chip is gone. The scene's own Low / High returns after the event.
+- **Elevated** plays Roadworks only (2026-11-11): its Cut-in duplicated Road's. Cut-in lives on Road and Ramp Exit.
+- **Wait marker** (Junction Left turn, 2026-11-11): the stretch where the vehicle stands still (from `stopAt` to `turnAt`) breaks the track into dots, and a ring marks the release. The ring darkens while the playhead is inside the wait and fills with the accent once it passes. Each replay draws a new through stream and searches for a gap; a run without a usable gap stays stopped and has no release ring.
+- **Traffic** shows or hides cars in Roadworks while preserving the current pose, camera, timeline and run seed. Turning it off releases the constraint from that frame. Replay creates a new seed. Cars carried into Roadworks check the cone boundary and the receiving lane before steering; a blocked vehicle stops upstream. Cut-in, Merge and outdoor parking interactions force Traffic on and restore the user's setting afterwards. See [Other-vehicle feedback](#other-vehicle-feedback) for the colour rules.
+- **Ramp Type** offers Exit and Entrance. On the exit ramp, the other car may join ahead with a short gap or change lanes at a distance. Auto and the timeline react to the short projected gap; distant movement stays grey and the timeline shows Cruise. The camera follows ego’s heading through the ramp curve. On the entrance ramp, two approach lanes converge into the outer mainline lane. Ego starts in the outer ramp lane; the inner ramp lane sometimes has a car with its own speed and arrival time. Merge checks both approaches. Ego accelerates into a clear gap ahead of slower traffic or yields when mainline traffic or the ramp neighbor needs to go first. The blue path holds near the lane edge while yielding, the camera stays behind ego, and the left indicator signals entry. Vehicle feedback follows the shared causal-constraint and predicted-envelope policy above; a clear acceleration gap leaves unrelated traffic neutral. Both ramp types randomize three or four cars on replay; seeking keeps the same traffic. Driving interactions run for 15 s, preserving the event timing and adding continued driving after camera return. The timeline, replay, seek and Video export use the same length (2026-11-12). Parking and Junction retain their existing lengths.
+- State swaps settle rather than pop: the Camera chip and control fade in (160 ms), Traffic dims with a 160 ms opacity transition, and the whole inspector fades in (160 ms) when the scene changes.
+- On wide layouts, the inspector bottom edge fades while more content is below. Stacked layouts keep full text opacity at the scroll edge.
+- The scene selection, inspector segments and switch thumbs reuse the workbench's spring frames. The same element stretches in the direction of travel and settles with a small rebound. Keyboard and reduced-motion selection land directly.
+
+**Copy**
+- Ego car is "the vehicle"; other cars are "car" or named by role ("the oncoming car"). Guide lines, one per phase, say what the vehicle sees and what it does because of it (revised 2026-11-11). They never describe rendering (colours, camera, the blue path). Example, Left turn Wait: "The vehicle waits at the red light." End of playback: "**End** Replay to watch again, or drag to pick a frame."
+- Export file names follow the event names: `roadworks.png` or `cut-in.mp4`.
+
+**Playback bar** (the Driving assist button and the event timeline are one component)
+- One plate, one height: 40 px collapsed and expanded, so the canvas never moves. Expanded width is capped at 520 px and centred. The artboard and footer are centred as one block, and the footer always reserves the guide line, so the canvas keeps the same position in every scene.
+- Expanded layout, left to right: assist wheel (read-only, tooltip "Driving assist stays on during the event"), 20 px divider at 55% of text-3, play / pause / replay, continuous 4 px track, time ("3.8 s", 44 px tabular slot). 16 px from the plate edge on both sides.
+- Track: hovering shows phase and time; phase boundaries appear as 2 px gaps only while hovering or dragging; the thumb is 12 px, 14 px on hover, 16 px while dragging. Dragging holds the frame; if the event was playing, it resumes from the new point on release. Space toggles play when focus is not on a control. At the end the bar stays on the last frame (PNG exports the paused frame), shows replay, and the guide line says End.
+- Light surface: raised background and a 1 px hairline, no drop shadow.
+
+**Playback bar motion** (one continuous shot)
+
+| Element | Expand | Collapse |
+|---|---|---|
+| Plate width | 60–380 ms, shared spring with 1.2% overtravel | 60–330 ms, system ease |
+| Assist wheel | the same wheel travels left, stretches horizontally by 6%, then returns to its circular shape | travels back with the system ease and the same subtle stretch |
+| "Driving assist" words | the same slot travels right and narrows. The label softens, shrinks and fades from 60 ms. The time sharpens and grows from 120 ms | the slot widens as the time hands back to the label |
+| Play and track | open from a zero-width slit between wheel and words, edges locked to them, sharpening from a 6 px blur | close back into the slit while blurring and fading |
+| Divider | follows the left edge of the opening. It grows from its vertical centre and fades in from 110–270 ms | retracts towards the centre and fades out from 0–110 ms |
+
+- Plate, wheel, words and the middle opening share the same travel curve. Reduced motion removes travel, blur and scale, keeps the content fades and switches the divider instantly.
+- Rejected along the way, for the record: content clipped by the plate edge (looked scraped), Dynamic Island breathing in height and a 5% spring (too bouncy), a plate that overtravels while its content does not (the plate lagged behind its content), the wheel fading out and back in (broke continuity), a separate expanded "Driving assist" label (the bar looked scattered).
+
+## Other-vehicle feedback
+
+Amber identifies the vehicle that currently makes ego slow, yield, wait for a gap or revise a manoeuvre. A moving vehicle ahead that merely sets the pace of stable following stays grey. Evaluate a developing conflict using bumper-to-bumper clearance, closing speed and whether the paths overlap. A shrinking gap can require a response while the other car is still crossing the lane line. Road and Ramp Exit show the Cut-in phase only during the amber portion of a constraining merge. The Cut-in switch selects a nearby merge that will make ego slow before the actor settles in its lane. Traffic that leaves enough room remains in the background. If traffic leaves no safe opening for a qualifying merge, the replay shows No opening and keeps the current lane. A faster car approaching from behind can block a target lane even while ego holds its speed. These distinctions follow real driving observations from the [Shanghai Naturalistic Driving Study](https://www.sciencedirect.com/science/article/pii/S0968090X18315225) and the [UK Highway Code, rules 126 and 133](https://www.gov.uk/guidance/the-highway-code/general-rules-techniques-and-advice-for-all-drivers-and-riders-103-to-158). A short steady gap remains a following-distance concern.
+
+| Situation | Amber starts and stays while | Amber can release when |
+| --- | --- | --- |
+| Roadworks | A car owns a speed limit more than 0.5 m/s below both ego speed and the roadworks speed target, or blocks ego when the planner is ready to change lanes. | The speed correction falls within that tolerance and the merge can proceed or is complete. Roadworks slowing on its own does not colour traffic. |
+| Road and Ramp Exit Cut-in | The projected gap falls below the following target and the actor constrains ego's speed. | Braking finishes and closing speed is at most 0.5 m/s. |
+| Road Lane change and Ramp Merge | A specific vehicle delays the chosen manoeuvre. In a speed-matched ramp approach, mark the lead while it changes the approach speed by more than 0.5 m/s and ego is still more than 0.5 m/s below the new target speed. | The gap opens, the speed match reaches tolerance, or the merge is complete. |
+| Parking, Oncoming car | The approach conflicts with the original parking path and ego starts making room. Amber stays while the oncoming vehicle is approaching, passing close by, or still blocks the next turn. | The other car's nose is past ego's tail with a margin, the gap is opening, and its projected body clears the next turning path when started from the end of the avoidance leg. The pause built into the replay does not extend amber. |
+| Collision, evasive steering and other parking interactions | The obstacle still requires a stop, an avoidance manoeuvre, a wait or a parking replan. A stopped ego can still be actively yielding. | The event releases the avoidance or yielding constraint. Junction traffic stays grey unless it blocks the proposed turning path. |
+
+The low-speed passing rule uses clearance and relative motion to estimate whether steering or waiting is still required. Experiments on narrow roads observed drivers changing heading and speed according to the space available, then adjusting back after the pass. The prototype's nose-to-tail margin is 0.35 m. [Narrow-road passing experiments](https://pubsonline.informs.org/doi/full/10.1287/trsc.2024.0904).
+
+Red has priority if the shared prediction finds overlap of the oriented, speed-expanded vehicle bodies within 2.5 s. In Cut-in, the turn signal shows intent. The car stays grey while it is still clear of ego's path and ego has no reason to yield. If ego starts yielding first, the car can turn amber. The scripted future trajectory becomes eligible for predictive red when the actor's physical footprint reaches the divider. An immediate overlap can still trigger red. Drivers' responses to cut-ins vary with how quickly the other car moves toward the lane edge. The divider gate is a prototype calibration. [SHRP2 naturalistic cut-in study](https://journals.sagepub.com/doi/10.1177/03611981211045368).
+
+Downshifts require 0.5 s of stable clearance and fade over 350 ms. Playback, pause, backward seeking and video export sample the same timeline. The [material palette](../traffic-color-reference.md), ground gap markers, camera and path length are separate from the colour trigger. The 0.5 m/s tolerance suppresses small speed corrections in this prototype. Safe following and collision thresholds for a real vehicle require separate validation.
+
+## Proposed design-system additions
+
+The author confirmed on 2026-11-08 that the design system evolves with new features and should not block them. Each new value in `prototype.css` carries a `ds-allow` note pointing here. Proposed for `paxton-design-system` (via its own PR, not by editing the submodule):
+
+| Proposal | Value in the prototype |
+|---|---|
+| Playback bar component | 40 px plate shared by the assist button and the timeline, 520 px max width, 4 px track, 12/14/16 px thumb, 44 px time slot |
+| Motion: playback curves | open: 320 ms spring with 1.2% overtravel; close: system ease 270 ms; 60 ms lead-in |
+| Motion: content swap | 6 px blur and 94% scale out and in, 160 ms; shared elements travel instead of crossfading |
+| Panel spacing model | 36 px rows, 4 px row gap, 12 px between a setting pair and the next setting, 16 px + hairline + 16 px between groups, label column 64 px (update `keypage.json` if adopted) |
+
+## Runtime limitations
+
+Exports use the real scene renderer. This is a browser-based design workbench with controlled demonstration scenarios; vehicle trajectories and feedback are not a production driving system. A real WebGL context loss automatically recreates the renderer and its GPU caches, retaining the scene settings. Recovery waits until the document is visible and is limited to two attempts per minute to avoid an endless reload loop. Normal document suspension during preparation is allowed, and returning to a paused scene requests a fresh draw.
+
+## Integrating into the workbench
+
+1. Treat each section above as a separate, author-confirmed change to the key page (AGENTS.md rule 0).
+2. Port `prototype.css` rules into the owning stylesheets, replacing raw values with tokens; do not append override blocks (rule 8).
+3. If the spacing model change is adopted, update `studio/ui-draft/keypage.json` in the same commit, with the author's approval.

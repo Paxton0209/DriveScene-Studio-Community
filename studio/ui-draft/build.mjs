@@ -1,0 +1,287 @@
+import {prepareDisplayVehicles} from './prepare-display-assets.mjs';
+import {createHash} from 'node:crypto';
+import {encodeTrafficPayload} from './traffic-payload.js';
+import {showStartupPoster,layoutStartupPoster} from './startup-poster.mjs';
+import {startupAssetScript,packedNormalsModule} from './startup-bundles.mjs';
+import {fetchAsset} from '../engine/asset-request.js';
+import {build,transform} from 'esbuild';
+import {access,mkdir,readFile,writeFile} from 'node:fs/promises';
+import {fileURLToPath} from 'node:url';
+import {gunzipSync,gzipSync} from 'node:zlib';
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {MeshoptDecoder} from 'three/addons/libs/meshopt_decoder.module.js';
+import {ConvexHull} from 'three/addons/math/ConvexHull.js';
+import {prepareVehicleMaterials} from '../engine/vehicle-library/three/vehicle-materials.js';
+import {consolidateTrafficRear,refineTrafficBody,compactTrafficAttributes} from './traffic-surface.js';
+const root=fileURLToPath(new URL('.',import.meta.url));
+await import('./build-parked-view.mjs');
+await writeFile(new URL('./parking-normals.bundle.js',import.meta.url),packedNormalsModule(JSON.parse(await readFile(new URL('./saved-preview/parking-material-normals.json',import.meta.url),'utf8'))));
+// Reuse framing.js's existing exact hull-index path. Generate after the same
+// geometry preparation as load-prepared.js; never build hulls on a visible frame.
+await prepareDisplayVehicles();
+const frameHulls={};
+for(const [id,length] of [['ix',4.95],['xc90',4.95],['model-3',4.72]]){
+ const bytes=gunzipSync(await readFile(new URL(`./vehicles/${id}/model.glb.gz`,import.meta.url)));
+ const loader=new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+ // Images do not affect geometry or material names used by preparation.
+ loader.register(parser=>({name:'offline-framing-geometry',beforeRoot(){
+  const dependency=parser.getDependency;
+  parser.getDependency=function(type,index){return type==='texture'?Promise.resolve(null):dependency.call(this,type,index);};
+ }}));
+ const {scene:model}=await loader.parseAsync(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength),'');
+ model.updateMatrixWorld(true);const size=new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
+ model.rotation.y+=id==='model-3'?Math.PI/2:(size.x>size.z?Math.PI/2:Math.PI);
+ if(['ix','xc90'].includes(id))model.rotation.y+=Math.PI;
+ model.scale.multiplyScalar(length/Math.max(size.x,size.z));model.updateMatrixWorld(true);
+ const box=new THREE.Box3().setFromObject(model),center=box.getCenter(new THREE.Vector3());
+ model.position.sub(new THREE.Vector3(center.x,box.min.y,center.z));model.updateMatrixWorld(true);
+ prepareVehicleMaterials(model,id,length);
+ const meshes=[];model.traverse(mesh=>{
+  if(!mesh.isMesh)return;const p=mesh.geometry.attributes.position,indices=new Set();
+  try{
+   const points=Array.from({length:p.count},(_,index)=>Object.assign(new THREE.Vector3().fromBufferAttribute(p,index),{index}));
+   for(const face of new ConvexHull().setFromPoints(points).faces){let edge=face.edge;do{indices.add(edge.head().point.index);edge=edge.next;}while(edge!==face.edge);}
+  }catch{/* Degenerate geometry retains the full scan. */}
+  meshes.push({name:mesh.name,count:p.count,indices:[...indices]});
+ });frameHulls[id]=meshes;
+}
+await writeFile(new URL('./vehicles/framing-hulls.json',import.meta.url),JSON.stringify(frameHulls));
+frameHulls.x6=(await import('../engine/vehicle-frame-hull.js')).default;
+for(const [id,hulls]of Object.entries(frameHulls))await writeFile(new URL(`./vehicles/${id}/framing-hull.json`,import.meta.url),JSON.stringify(hulls));
+// Static geometry preparation belongs to the build, not the first visible frame.
+const traffic=JSON.parse(gunzipSync(await readFile(new URL('../engine/assets/traffic-model-y.json.gz',import.meta.url))));
+const preparedTraffic=compactTrafficAttributes(refineTrafficBody(consolidateTrafficRear(traffic)));
+await writeFile(new URL('./traffic-model-y.prepared.json.gz',import.meta.url),gzipSync(JSON.stringify(preparedTraffic)));
+// Keep the approved Traffic topology and normals exactly. Lossless packing
+// reduces parsing work without collapsing exterior panels.
+await writeFile(new URL('./traffic-model-y.prepared.bin.gz',import.meta.url),gzipSync(encodeTrafficPayload(preparedTraffic),{level:9}));
+const html=await readFile(new URL('../engine/index.html',import.meta.url),'utf8');
+const embedded=html.replace('if(!q.get("model")||q.get("model")==="x6")','if(!globalThis.__fullVehicleRequest&&(!q.get("model")||q.get("model")==="x6"))').replace('async function preloadAsset(url){',`async function preloadAsset(url){try{const requests=window.parent.__draftStartupAssets,key=new URL(url,document.baseURI).href,models=window.parent.__draftVehicleAssets;const early=models?.get(key)??requests?.get(key);if(early){if(!models||!key.includes("/model.glb.gz"))requests?.delete(key);return await early;}if(models&&requests&&key.includes("/model.glb.gz")){const request=fetchWithProgress(url);requests.set(key,request);return await request;}}catch{} `).replace('globalThis.__studioEnvironmentRequest=preloadAsset(',`const selectedModel=q.get('model')||'x6';if(['model-3','ix','xc90'].includes(selectedModel)){globalThis.__draftPreparedVehicle={id:selectedModel,request:preloadAsset('../ui-draft/vehicles/'+selectedModel+'/model.glb.gz?v=restore26')};globalThis.__draftPreparedVehicle.request.catch(()=>{});}if(selectedModel==='x6'){globalThis.__fullVehicleRequest=preloadAsset('./ego-vehicle-ready.glb.gz?v=17.9');globalThis.__fullVehicleRequest.catch(()=>{});}if(q.get('traffic')==='1'){globalThis.__draftTrafficRequest=preloadAsset('../ui-draft/traffic-model-y.prepared.bin.gz?v=restore26');globalThis.__draftTrafficRequest.catch(()=>{});}globalThis.__studioEnvironmentRequest=preloadAsset(`).replace('<head>','<head><base href="../engine/"><link rel="stylesheet" href="../ui-draft/engine.css?v=startup-20261027">').replaceAll('drivescene-preview-v15','drivescene-ui-draft-preview-v1').replaceAll('"sr-theme"','"sr-ui-draft-theme"').replace('<script src="startup.js?v=20261019-finish-110"></script>','<script type="module" src="../ui-draft/runtime.bundle.js?v=horizon-startup-20261102"></script>');
+const {code:assetFallback}=await transform('const fetchWithProgress='+fetchAsset.toString()+';',{minify:true,target:'es2021'});
+let engineHtml=embedded.replace('async function preloadAsset(url){',assetFallback+'async function preloadAsset(url){')
+ .replace(/const c=new AbortController\(\),t=setTimeout\(\(\)=>c.abort\(\),30000\);try\{.*?finally\{clearTimeout\(t\)\}/,'return fetchWithProgress(url);')
+ .replaceAll('./ego-vehicle-ready.glb.gz?v=17.9','../ui-draft/vehicles/x6/model.glb.gz?v=x6-lossless-20261104').replace(/document\.documentElement\.style\.setProperty\(\"--startup-frame\"[\s\S]*?document\.head\.append\(link\);/,'');
+// Preserve the engine cascade exactly while avoiding a separate network turn
+// for each stylesheet in the first embedded frame. These styles have no URLs.
+for(const [tag] of engineHtml.matchAll(/<link[^>]*rel="stylesheet"[^>]*>/g)){
+ const href=tag.match(/href="([^"]+)"/)[1].split('?')[0];
+ const css=await readFile(new URL(href,new URL('../engine/',import.meta.url)),'utf8');
+ engineHtml=engineHtml.replace(tag,()=>`<style>${css}</style>`);
+}
+engineHtml=engineHtml.replaceAll('location.search','(globalThis.__draftSearch??location.search)').replace('<head>','<head><script>globalThis.__draftSearch=window.frameElement?.dataset.search||location.search;<\/script>');
+// Minimal embedded engine shell for Pro: strip standalone UI CSS (~90 KB) while
+// preserving the preload bootstrap, embedded layout rules, and engine DOM anchors.
+function buildProEngineHtml(fullHtml){
+ const titleEnd=fullHtml.indexOf('</title>');
+ const tailStyleMarker='html,body {margin:0!important;padding:0!important;overflow:hidden!important;width:100%!important;height:100%!important;background:transparent!important}';
+ const tailStyleStart=fullHtml.lastIndexOf('<style>',fullHtml.indexOf(tailStyleMarker));
+ if(titleEnd<0||tailStyleStart<0)throw Error('Engine HTML anchors missing for pro-engine.html');
+ // Keep the WebGL canvas hidden while aria-busy="true" so the compositor does
+ // not read back or present intermediate shader-warmup frames during startup.
+ // Match parent color-scheme so dark mode never paints a white iframe backdrop,
+ // and cover subpixel 16:9 rounding edges cleanly.
+ const busyRule='<style>:root{color-scheme:light}:root[data-theme=dark]{color-scheme:dark;background:#0A0A0B}:root[data-theme=dark] body{background:#0A0A0B}.preview[aria-busy=true] #scene-canvas{visibility:hidden}[hidden]{display:none!important}</style>';
+ const stripped=(fullHtml.slice(0,titleEnd+'</title>'.length)+busyRule+fullHtml.slice(tailStyleStart))
+  .replace('#scene-canvas,.frame-cover {position:absolute!important;inset:0!important;width:100%!important;height:100%!important;object-fit:contain!important}','#scene-canvas,.frame-cover {position:absolute!important;inset:0!important;width:100%!important;height:100%!important;object-fit:cover!important}');
+ return stripped
+  .replaceAll('key.includes("/model.glb.gz")','key.includes(".glb.gz")')
+  .replace(
+   "preloadAsset('../ui-draft/vehicles/'+selectedModel+'/model.glb.gz?v=restore26')",
+   "preloadAsset(window.parent?.__draftStartupLod?.id===selectedModel?window.parent.__draftStartupLod.url:'../ui-draft/vehicles/'+selectedModel+'/model.glb.gz?v=restore26')"
+  );
+}
+await writeFile(new URL('./engine.html',import.meta.url),engineHtml);
+await writeFile(new URL('./pro-engine.html',import.meta.url),buildProEngineHtml(engineHtml));
+const startupScript=await startupAssetScript();
+const parentFile=new URL('./index.html',import.meta.url);let parent=await readFile(parentFile,'utf8');
+parent=parent.replace(/<script id="startup-draft"[^>]*>[\s\S]*?<\/script>/,'<script type="module" src="draft.bundle.js?v=export-clarity-v34-20261029"></script>');
+parent=parent.replace(/<link rel="modulepreload"[^>]+>/g,'').replace(/<link rel="preload" href="icons.json"[^>]+>/g,'').replace(/<script id="startup-assets">[\s\S]*?<\/script>/,'').replace('<title>',`<script id="startup-assets">${startupScript}</script><title>`).replace(/src="(?:draft|draft.bundle)\.js\?v=[^"]+"/,'src="draft.bundle.js?v=export-clarity-v34-20261029"');
+// Discover and download both executable bundles before the poster/body parse.
+// The embedded document reuses the runtime's module request from this origin.
+parent=parent.replace('<script id="startup-assets">','<link rel="modulepreload" fetchpriority="high" href="runtime.bundle.js?v=horizon-startup-20261102"><script id="startup-assets">');
+parent=parent.replace(/<script id="startup-poster">[\s\S]*?<\/script>/,'').replace(/<script id="startup-layout">[\s\S]*?<\/script>/,'');
+// Keep the default first frame inline. Other scenes/themes do not belong in
+// every visitor's critical HTML; preserve their exact JPEG bytes as assets.
+const previewData=JSON.parse(await readFile(new URL('./startup-previews.json',import.meta.url),'utf8'));
+await mkdir(new URL('./startup-previews/',import.meta.url),{recursive:true});
+const previewDirectory={};
+for(const [key,data] of Object.entries(previewData)){
+ const bytes=Buffer.from(data.split(',')[1],'base64'),hash=createHash('sha256').update(bytes).digest('hex').slice(0,12);
+ await writeFile(new URL('./startup-previews/'+key+'.jpg',import.meta.url),bytes);
+ previewDirectory[key]=key==='road-light'?data:'./startup-previews/'+key+'.jpg?v='+hash;
+}
+const previews=JSON.stringify(previewDirectory);
+// Keep the approved profile's execution order without a parser-blocking fetch.
+parent=parent.replace(/<script(?: id="saved-frame-profile"| src="saved-preview\/frame-profile\.js[^"]*")[^>]*>[\s\S]*?<\/script>/g,'');
+const frameProfile=await readFile(new URL('./saved-preview/frame-profile.js',import.meta.url),'utf8');
+parent=parent.replace('</body>',`<script id="saved-frame-profile">${frameProfile}</script></body>`);
+
+// Compact the inline startup scripts to preserve the HTML byte budget.
+const {code:posterScript}=await transform(`(${showStartupPoster.toString()})(${previews},window)`,{loader:'js',minify:true});
+const {code:layoutScript}=await transform(`(${layoutStartupPoster.toString()})()`,{loader:'js',minify:true});
+parent=parent.replace('</head>',()=>`<script id="startup-poster">${posterScript.replace(/<\/script/gi,'<\\/script')}</script></head>`).replace('<script type="module"',`<script id="startup-layout">${layoutScript}</script><script type="module"`);
+// First paint must not wait for a separate CSS response. Keep the complete
+// existing cascade inline and regenerate it on every build.
+parent=parent.replace(/<style data-startup-css="[^"]+">[\s\S]*?<\/style>/g,'');
+for(const name of ['draft.css','inspector.css']){
+ parent=parent.replace(new RegExp('<link rel="stylesheet" href="'+name.replace('.','\\.')+'[^\"]*">'),'');
+ const css=await readFile(new URL('./'+name,import.meta.url),'utf8');
+ parent=parent.replace('</head>',`<style data-startup-css="${name}">${css}</style></head>`);
+}
+await writeFile(parentFile,parent);
+const iconFile=new URL('./icons.json',import.meta.url),iconMissing=await access(iconFile).then(()=>false,()=>true);
+if(iconMissing||process.argv.includes('--sync-icons')){
+ const reference=await readFile(new URL('../../outputs/design-reference-Main.dc.html',import.meta.url),'utf8');
+ const prefix=source=>source.replaceAll('id="ic','id="ud-ic').replaceAll('url(#ic','url(#ud-ic');
+ const nav=Object.fromEntries([...reference.matchAll(/<button[^>]*go\.(\w+)[^>]*>(<svg[\s\S]*?<\/svg>)/g)].map(match=>[match[1],prefix(match[2])]));
+ const weather=Object.fromEntries([...reference.matchAll(/<button[^>]*wx\.(clear|cloudy|rain|snow)\.on[^>]*>(<svg[\s\S]*?<\/svg>)/g)].map(match=>[{clear:'default',cloudy:'overcast',rain:'rain',snow:'snow'}[match[1]],match[2].replaceAll('width="13"','width="14"').replaceAll('height="13"','height="14"')]));
+ if(Object.keys(nav).length!==6||Object.keys(weather).length!==4)throw Error('Reference SVG inventory mismatch');
+ await writeFile(iconFile,JSON.stringify({defs:prefix(reference.match(/<svg width="0"[\s\S]*?<\/svg>/)[0]),nav,weather}));
+}
+function draftMotion(source){
+ return source
+  .replace('y:3,width:selected.offsetWidth,height:container.clientHeight-6','y:2,width:selected.offsetWidth,height:container.clientHeight-4')
+  .replaceAll('openHeight=44','openHeight=112')
+  .replaceAll('openHeight-44','openHeight-112')
+  .replaceAll('round 12px','round 8px')
+  .replace("const options={duration:reducedMotion()?0:(open?.375:.32)*ARC_MOTION_SCALE*1000,easing:'cubic-bezier(.22,1,.36,1)'}","const options={duration:reducedMotion()?0:(open?220:160),easing:'cubic-bezier(.2,.9,.3,1)'}")
+  .replace('if(instant||reducedMotion())return;\n  sequence=selectionMotionFrames','if(instant||reducedMotion()){indicator.classList.remove(\'is-moving\');return;}\n  sequence=selectionMotionFrames')
+  .replace('const active=indicator.animate(sequence.frames','indicator.classList.add(\'is-moving\');const active=indicator.animate(sequence.frames')
+  .replace('animation=null;sequence=null;}','animation=null;sequence=null;indicator.classList.remove(\'is-moving\');}')
+  .replace('const content=grid(),from=getComputedStyle(popup).clipPath,fromOpacity=getComputedStyle(content).opacity,fromTransform=getComputedStyle(content).transform;','const content=grid(),from=getComputedStyle(popup).clipPath,fromOpacity=getComputedStyle(content).opacity,fromTransform=getComputedStyle(content).transform,fromPopupOpacity=getComputedStyle(popup).opacity,fromPopupTransform=getComputedStyle(popup).transform;')
+  .replace('popup.style.clipPath=target;content.style.opacity=opacity;','popup.style.clipPath=target;popup.style.opacity=opacity;popup.style.transform=open?\'scale(1)\':\'scale(.96)\';content.style.opacity=opacity;')
+  .replace("animation=popup.animate([{clipPath:from==='none'?target:from},{clipPath:target}],options);","animation=popup.animate([{clipPath:from==='none'?target:from,opacity:fromPopupOpacity,transform:fromPopupTransform},{clipPath:target,opacity,transform:open?'scale(1)':'scale(.96)'}],options);")
+  .replace("grid().style.opacity='0';grid().style.transform='translateY(-6px)';","grid().style.opacity='0';grid().style.transform='translateY(-6px)';popup.style.opacity='0';popup.style.transform='scale(.96)';");
+}
+await build({absWorkingDir:root,entryPoints:['../ui-motion.js'],bundle:true,minify:true,format:'esm',outfile:'motion-runtime.js',plugins:[{name:'draft-motion-dimensions',setup(builder){builder.onLoad({filter:/\/ui-motion\.js$/},async args=>({contents:draftMotion(await readFile(args.path,'utf8')),loader:'js',resolveDir:root+'../'}))}}]});
+// Parking event planning and rendering load only when parking assets are requested.
+await build({absWorkingDir:root,entryPoints:['./parking-interaction-runtime.js'],bundle:true,minify:true,format:'esm',outfile:'parking-interactions.bundle.js',target:['chrome110','safari17']});
+// Export utilities and driving-event planners share the host runtime's THREE
+// instance and load lazily when the user triggers export or a driving event.
+const sharedThreePlugin={name:'shared-three',setup(b){
+ b.onResolve({filter:/^three$/},()=>({path:'three',namespace:'shared-three'}));
+ b.onLoad({filter:/.*/,namespace:'shared-three'},()=>({contents:'const T=globalThis.__draftTHREE;export const MathUtils=T.MathUtils;export default T;',loader:'js'}));
+ b.onLoad({filter:/\.(?:js|mjs)$/},async args=>{
+  const text=await readFile(args.path,'utf8');
+  if(!text.includes("from 'three'")&&!text.includes('from "three"'))return null;
+  const rewritten=text
+   .replace(/import\s*\*\s*as\s+([\w$]+)\s+from\s+['"]three['"]\s*;?/g,'const $1=globalThis.__draftTHREE;')
+   .replace(/import\s*\{([^}]+)\}\s+from\s+['"]three['"]\s*;?/g,'const {$1}=globalThis.__draftTHREE;');
+  return {contents:rewritten,loader:'js'};
+ });
+}};
+const {isolatedRuntimePlugin}=await import('./runtime-patches.mjs');
+const baseIsolate=isolatedRuntimePlugin();
+const exportPatchPlugin={name:'export-lazy-patch',setup(b){
+ baseIsolate.setup({onLoad(options,loader){
+  b.onLoad(options,async args=>{
+   const res=await loader(args);
+   if(!res?.contents)return res;
+   return {...res,contents:res.contents.replace(/import\s*\*\s*as\s+([\w$]+)\s+from\s+['"]three['"]\s*;?/g,'const $1=globalThis.__draftTHREE;')};
+  });
+ }});
+}};
+await Promise.all([
+ build({absWorkingDir:root,entryPoints:['./export-runtime.js'],bundle:true,minify:true,format:'esm',outfile:'export.bundle.js',target:['chrome110','safari17'],plugins:[exportPatchPlugin,sharedThreePlugin]}),
+ build({absWorkingDir:root,entryPoints:['./elevated-roadworks.js'],bundle:true,minify:true,format:'esm',outfile:'driving-events.bundle.js',target:['chrome110','safari17'],plugins:[sharedThreePlugin]}),
+]);
+// Hash the runtime with the saved material and camera profile already applied.
+await import('./saved-preview/build.mjs');
+const runtimeFile=new URL('./runtime.bundle.js',import.meta.url);
+// Minified JS leaves multiline formatting inside shader strings. Keep
+// preprocessor directives and the exact text used by shader replacement hooks.
+const runtime=(await readFile(runtimeFile,'utf8'))
+ .replace(/^[\t ]*\/\/[^\n]*\n/gm,'')
+ .replace(/^[\t ]+|[\t ]+$/gm,'')
+ .replace(/\n(?=\n)/g,'')
+ .replace(/^(?![^\n]*[`$#])([^\n]{1,200}[;{}])\n(?=[A-Za-z_])/gm,'$1');
+await writeFile(runtimeFile,runtime);
+const runtimeVersion=createHash('sha256').update(runtime).digest('hex').slice(0,12);
+engineHtml=engineHtml.replaceAll('horizon-startup-20261102',runtimeVersion);
+parent=parent.replaceAll('horizon-startup-20261102',runtimeVersion);
+await writeFile(new URL('./engine.html',import.meta.url),engineHtml);
+await writeFile(new URL('./pro-engine.html',import.meta.url),buildProEngineHtml(engineHtml));
+await import('./pro-prototype/build-shell.mjs');
+await build({absWorkingDir:root,entryPoints:['./draft.js'],loader:{'.html':'text','.svg':'text'},bundle:true,minify:true,format:'esm',outfile:'draft.bundle.js',target:['chrome110','safari17'],plugins:[{name:'inline-icons',setup(b){b.onLoad({filter:/\/draft\.js$/},async({path})=>({contents:(await readFile(path,'utf8')).replace("await fetch('./icons.json').then(response=>response.json())",await readFile(iconFile,'utf8')),loader:'js',resolveDir:root}));}}]});
+console.log('UI draft runtime built; shared engine files are read-only inputs.');
+
+// Reproduce the saved preview, including its fixed material and frame profile.
+await build({absWorkingDir:root,entryPoints:['./video.js'],bundle:true,minify:true,format:'esm',outfile:'video.bundle.js',target:['chrome110','safari17']});
+// The complete control tree must start with the first HTML response, without
+// another module round trip. Escape embedded HTML script terminators once.
+const draftBundle=await readFile(new URL('./draft.bundle.js',import.meta.url),'utf8');
+const inlineDraft=draftBundle.replace(/<\/script/gi,'<\\/script');
+await writeFile(parentFile,parent.replace(/<script type="module" src="draft.bundle.js[^"]*"><\/script>/,()=>`<script id="startup-draft" type="module">${inlineDraft}</script>`));
+console.log('Saved 2026-10-27 preview profile applied.');
+
+// Keep the independent shell trial reproducible, including its existing
+// two-dimensional selection geometry. Spring timing and frame math are shared.
+await build({absWorkingDir:root,entryPoints:['../ui-motion.js'],bundle:true,minify:true,format:'esm',outfile:'trial-motion-runtime.js',plugins:[{name:'trial-selection-geometry',setup(builder){builder.onLoad({filter:/\/ui-motion\.js$/},async args=>{
+ let contents=draftMotion(await readFile(args.path,'utf8'));
+ const start=contents.indexOf('export function morphSegment('),end=contents.indexOf('export function glideIndicator(',start);
+ contents=contents.slice(0,start)+`export function morphSegment(container,selected,instant=false){
+ instant=instant||window.draftSelectionKeyboard===true;
+ if(!selected||!container.clientWidth||!selected.offsetWidth)return;
+ const axis=container.id==='vehicle-strip'&&getComputedStyle(container).flexDirection==='column'?'y':'x',parent=container.getBoundingClientRect(),child=selected.getBoundingClientRect();
+ const next={x:child.left-parent.left+container.scrollLeft-container.clientLeft,y:child.top-parent.top+container.scrollTop-container.clientTop,width:child.width,height:child.height};
+ let motion=segmentIndicators.get(container);
+ if(!motion||motion.axis!==axis){motion?.indicator.remove();const indicator=document.createElement('span');indicator.className='segment-indicator';indicator.setAttribute('aria-hidden','true');container.prepend(indicator);container.dataset.motionIndicator='true';motion=createSelectionMotion(indicator,next,axis);motion.axis=axis;segmentIndicators.set(container,motion);instant=true;}
+ motion.to(next,instant);
+}
+window.draftSelectionMotion=morphSegment;
+`+contents.slice(end);
+ return {contents,loader:'js',resolveDir:root+'../'};
+ });}}]});
+const trial=await build({absWorkingDir:root,entryPoints:['./draft.js'],loader:{'.html':'text','.svg':'text'},bundle:true,minify:true,format:'esm',write:false,target:['chrome110','safari17'],plugins:[{name:'trial-shell',setup(b){b.onLoad({filter:/\/draft\.js$/},async({path})=>({contents:(await readFile(path,'utf8')).replace("'./motion-runtime.js'","'./trial-motion-runtime.js'").replace("await fetch('./icons.json').then(response=>response.json())",await readFile(iconFile,'utf8')),loader:'js',resolveDir:root}));}}]});
+// Preserve the approved shell geometry while sharing its theme transition
+// rules with the source stylesheet on every build.
+const themeCSS=await readFile(new URL('./draft.css',import.meta.url),'utf8');
+const themeRules=themeCSS.slice(themeCSS.indexOf('@property --theme-reveal-progress'),themeCSS.indexOf(':root{--e1-lifted'));
+if(!themeRules.startsWith('@property')||!themeRules.includes('@keyframes theme-reveal'))throw Error('Theme reveal stylesheet missing');
+const trialFile=new URL('./skill.html',import.meta.url),trialHtml=(await readFile(trialFile,'utf8')).replace(/@property --theme-reveal-progress[\s\S]*?(?=:root\{--e1-lifted)/,()=>themeRules).replace(/<script id="saved-frame-profile">[\s\S]*?<\/script>/,()=>`<script id="saved-frame-profile">${frameProfile}</script>`);
+const approvedHtml=trialHtml.replace(/<link rel="modulepreload" fetchpriority="high" href="runtime\.bundle\.js\?v=[^"]+">/,()=>parent.match(/<link rel="modulepreload" fetchpriority="high" href="runtime\.bundle\.js\?v=[^"]+">/)[0]).replace(/<script id="startup-poster">[\s\S]*?<\/script>/,()=>parent.match(/<script id="startup-poster">[\s\S]*?<\/script>/)[0]).replace(/<script id="startup-assets">[\s\S]*?<\/script>/,()=>'<script id="startup-assets">'+startupScript+'</script>').replace(/<script id="startup-draft" type="module">[\s\S]*?<\/script>/,()=>'<script id="startup-draft" type="module">'+trial.outputFiles[0].text.replace(/<\/script/gi,'<\\/script')+'</script>');
+// The approved shell must arrive with the document. External styles delayed
+// module execution and font discovery by another network round trip.
+let shippedHtml=approvedHtml;
+shippedHtml=shippedHtml.replace(/<meta name="viewport"[^>]*>/,'<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">');
+shippedHtml=shippedHtml.replace(/<script id="startup-layout">[\s\S]*?<\/script>/,()=>parent.match(/<script id="startup-layout">[\s\S]*?<\/script>/)[0]);
+for(const name of ['draft.css','inspector.css','guizang-trial.css','shell-v5.css']){
+ const sourceCss=(await readFile(new URL('./'+name,import.meta.url),'utf8')).replace('@import url("./design-system/tokens.css");',await readFile(new URL('./design-system/tokens.css',import.meta.url),'utf8'));
+ const {code:css}=await transform(sourceCss,{loader:'css',minifyWhitespace:true});
+ const attr=['draft.css','inspector.css'].includes(name)?'data-startup-css':'data-shell-css';
+ // Source CSS is still checked line by line. Inlining collapses existing
+ // and new rules to one line, so compare rules in the owning files.
+ const tag=`<style ${attr}="${name}">/* ds-allow: Generated CSS is checked in the owning stylesheet. */${css}</style>`;
+ const existing=new RegExp('<style '+attr+'="'+name.replaceAll('.','\\.')+'">[\\s\\S]*?<\\/style>');
+ const external=new RegExp('<link[^>]*href="\\./'+name.replaceAll('.','\\.')+'[^\"]*"[^>]*>');
+ shippedHtml=existing.test(shippedHtml)?shippedHtml.replace(existing,()=>tag):shippedHtml.replace(external,()=>tag);
+}
+// Inline the compact startup policy in both public documents.
+const compactStartupCss=await readFile(new URL('./compact-startup.css',import.meta.url),'utf8');
+shippedHtml=shippedHtml.replace(/<style data-compact-startup-css>[\s\S]*?<\/style>\n/g,'').replace('</head>',()=>`<style data-compact-startup-css>\n${compactStartupCss}</style>\n</head>`);
+// Keep the slow-load indicator within the critical HTML size budget.
+const {code:startupWaitCss}=await transform(await readFile(new URL('./startup-wait.css',import.meta.url),'utf8'),{loader:'css',minify:true});
+shippedHtml=shippedHtml.replace(/<style data-startup-wait-css>[\s\S]*?<\/style>\n/g,'').replace('</head>',()=>`<style data-startup-wait-css>${startupWaitCss}</style>\n</head>`);
+for(const name of ['guizang-layout.js','shell-v5.js']){
+ const source=(await readFile(new URL('./'+name,import.meta.url),'utf8')).replace("await fetch('./icons.json').then(response=>response.json())",await readFile(iconFile,'utf8')).replace(/<\/script/gi,'<\\/script');
+ const {code}=await transform(source,{loader:"js",format:"esm",target:["chrome110","safari17"],minify:true});
+ const tag=`<script type="module" data-shell-module="${name}">${code.replace(/<\/script/gi,'<\\/script')}</script>`;
+ const existing=new RegExp('<script type="module" data-shell-module="'+name.replaceAll('.','\\.')+'">[\\s\\S]*?<\\/script>');
+ const external=new RegExp('<script type="module" src="\\./'+name.replaceAll('.','\\.')+'[^\"]*"><\\/script>');
+ shippedHtml=existing.test(shippedHtml)?shippedHtml.replace(existing,()=>tag):shippedHtml.replace(external,()=>tag);
+}
+shippedHtml=shippedHtml.replace(/<link data-startup-font[^>]*>/g,'').replace('<head>','<head><link data-startup-font rel="preload" href="./fonts/halden/Halden-Regular.woff2" as="font" type="font/woff2" crossorigin><link data-startup-font rel="preload" href="./fonts/halden/Halden-Medium.woff2" as="font" type="font/woff2" crossorigin>');
+// Discover the Assist wheel and compact scene chevron during HTML parsing.
+const startupWheel='<link data-startup-icon rel="preload" href="./assist-wheel-off.svg" as="image">';
+const compactChevron='<link data-startup-icon rel="preload" href="./chevron-down.svg" as="image" media="(max-width:639px), (max-width:959px) and (max-height:500px), (max-width:959px) and (orientation:portrait)">';
+shippedHtml=shippedHtml.replace(/<link data-startup-icon[^>]*>/g,'').replace('<head>','<head>'+startupWheel+compactChevron);
+// Feedback stays in the viewport even when the settings surface is scrolled.
+const feedbackMarkup='<div id="feedback-stack" class="ds-toast-stack"><div id="feedback" class="ds-toast" hidden><span id="feedback-message"></span><span id="feedback-action"></span></div></div><span id="feedback-live" class="feedback-live" role="status" aria-live="polite" aria-atomic="true"></span>';
+shippedHtml=shippedHtml.replace(/<p id="feedback"[^>]*><\/p>/,'').replace(/<div id="feedback-stack"[\s\S]*?<\/span>\s*(?=<div id="tooltip")/,'').replace('<div id="tooltip"',()=>feedbackMarkup+'<div id="tooltip"');
+// The parser's first button has the same label and icon geometry as readiness.
+shippedHtml=shippedHtml.replace(/<button id="scene-transport"[^>]*>[^<]*<\/button>/,'<button id="scene-transport" class="raised" role="switch" aria-checked="false" aria-label="Driving assist" disabled hidden>Driving assist</button>');
+await writeFile(trialFile,shippedHtml);
+// Publish the reviewed shell at the existing public entry point as well.
+await writeFile(parentFile,shippedHtml);
+console.log('Approved shell rebuilt and published to the default entry point.');

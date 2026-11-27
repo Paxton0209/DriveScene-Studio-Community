@@ -1,0 +1,309 @@
+/* Prototype additions. Values come from design-system tokens; geometry follows the live workbench. */
+.pro-scene-preview,.parked-view{position:absolute;inset:0;width:100%;height:100%;border:0;color-scheme:inherit}
+:root[data-theme=dark] #artboard .artboard-clip{background:var(--ds-color-canvas)}
+.parked-view{z-index:1}
+:root[data-parked-entry] #inspector,.artboard-clip[data-parked-entry] .pro-scene-preview{visibility:hidden}
+.artboard-clip[data-parked-entry]{background-image:var(--parked-entry-frame,none);background-position:center;background-size:cover}
+#startup-surface,#menu-cover,#canvas-transport,#indicator-mute{display:none!important}
+
+/* Menus reuse the live export popover (.format-options); only the extras are added here */
+.format-options{animation:proto-menu var(--ds-motion-menu) var(--ds-motion-ease);transform-origin:top}
+.format-options.up{transform-origin:bottom}
+@keyframes proto-menu{from{opacity:0;transform:scale(.98)}to{opacity:1;transform:none}}
+
+/* Keep the existing switch track and give its thumb a persistent element to morph. */
+#inspector .layer-row:has(>.layer-thumb)::before{display:none}
+#inspector .layer-row>.layer-thumb{
+  position:absolute;top:50%;right:calc(var(--ds-space-5) + var(--ds-size-thumb-inset));
+  width:var(--ds-space-5);height:var(--ds-space-5);border-radius:var(--ds-radius-pill);
+  translate:0 -50%;transform:translateX(0);z-index:1;pointer-events:none;background:var(--ds-color-on-accent)
+}
+#inspector .layer-row:is([aria-pressed=true],[aria-checked=true])>.layer-thumb{transform:translateX(var(--ds-space-5))}
+#inspector .layer-row:is([aria-pressed=false],[aria-checked=false]):not(:disabled)>.layer-thumb{box-shadow:var(--sh-raised)}
+@media (forced-colors:active){
+  #inspector .layer-row:is([aria-pressed=true],[aria-checked=true])>.layer-thumb{background:HighlightText}
+}
+
+/* Interaction and guide sections */
+#interaction-settings[hidden],#guide-settings[hidden],#shared-settings[hidden],#inspector-scroll>section:has(#layers)[hidden],#layers .layer-row[hidden]{display:none!important}
+html:root #inspector-scroll>:is(#interaction-settings,#shared-settings,section:has(#layers)):not([hidden]){margin-top:var(--ds-space-8)}
+@media(max-width:639px){ /* ds-allow: matches the existing mobile inspector breakpoint */
+  html:root #inspector-scroll>:is(#interaction-settings,#shared-settings,section:has(#layers),#export-section):not([hidden]){margin-top:var(--ds-space-9)}
+}
+:root .workspace[data-mobile-stage]{grid-template-rows:var(--ds-size-touch) minmax(0,var(--mobile-stage-h)) minmax(0,1fr)!important}
+:root .workspace[data-mobile-stage] #canvas-playback{--playback-inset:0%;--playback-expanded-inset:0%;--playback-expanded-x:0%}
+:root .workspace[data-mobile-stage] #canvas-playback[data-mode=assist]{--playback-inset:0%}
+:root .workspace[data-mobile-stage] #artboard #canvas-playback #scene-transport{width:100%;transform:none}
+:root .workspace[data-mobile-stage] #tl-guide{padding-top:var(--ds-space-4);font:var(--ds-text-ui-caption)}
+:root .workspace[data-mobile-stage] #tl-guide p{font:var(--ds-text-ui-caption)}
+:root .workspace[data-mobile-stage] #tl-guide b{font:var(--ds-text-ui-title)}
+#inspector #interaction-settings > h2{display:flex;align-items:center;gap:var(--ds-space-3)}
+#interaction-settings .event-list{display:flex;flex-direction:column;gap:var(--ds-space-2)}
+#interaction-settings .event-disclosure{display:grid;grid-template-rows:1fr;opacity:1}
+#interaction-settings[data-motion=live] .event-disclosure{transition:grid-template-rows var(--ds-motion-base) var(--ds-motion-ease-out),opacity var(--ds-motion-fast) var(--ds-motion-ease)}
+#interaction-settings .event-disclosure[aria-hidden=true]{grid-template-rows:0fr;opacity:0}
+#interaction-settings .event-disclosure-clip{min-height:0;overflow:clip}
+/* Pass on belongs to Roadworks by proximity: 4px to its switch, 12px to the next event. No indent, so every label and control keeps one column. */
+#interaction-settings .roadworks-controls{display:flex;flex-direction:column}
+#interaction-settings .event-disclosure:not([aria-hidden=true]){margin-top:var(--ds-space-2)}
+#interaction-settings[data-motion=live] .event-disclosure{transition-property:grid-template-rows,opacity,margin}
+#interaction-settings .roadworks-controls:has(.event-disclosure:not([aria-hidden=true])){margin-bottom:var(--ds-space-4)}
+#interaction-settings .event-list .layer-row[aria-checked=true]{color:var(--ds-color-text-1)}
+#interaction-settings .event-list .layer-row:is(:disabled,[aria-disabled=true]){opacity:var(--ds-motion-disabled-opacity);cursor:default}
+#inspector .event-controlled{opacity:var(--ds-motion-disabled-opacity);cursor:default}
+#inspector .event-controlled .segment[aria-disabled=true]{opacity:1}
+#inspector .event-controlled button:disabled{pointer-events:none}
+#inspector-scroll:is(.has-above,.has-more){--scroll-fade-top:0%;--scroll-fade-bottom:0%;-webkit-mask-image:linear-gradient(to bottom,transparent 0,var(--ds-color-ink) var(--scroll-fade-top),var(--ds-color-ink) calc(100% - var(--scroll-fade-bottom)),transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,var(--ds-color-ink) var(--scroll-fade-top),var(--ds-color-ink) calc(100% - var(--scroll-fade-bottom)),transparent 100%)}
+#inspector-scroll.has-above{--scroll-fade-top:var(--ds-space-10)}
+#inspector-scroll.has-more{--scroll-fade-bottom:var(--ds-space-10)}
+.unused-guide-title{display:block;font:var(--ds-text-ui-strong);color:var(--ds-color-text-1);margin:var(--ds-space-1) 0 var(--ds-space-2)}
+.guide-text{margin:0 0 var(--ds-space-2);font:var(--ds-text-meta);color:var(--ds-color-text-2)}
+.guide-text.on{color:var(--ds-color-text-1)}
+.cam-hint{margin:-2px 0 var(--ds-space-2) 64px;white-space:nowrap;font:var(--ds-text-ui-caption);color:var(--ds-color-text-2)} /* ds-allow: author-approved Pro prototype value 2026-11-08; proposed design-system addition, see README */
+.check-row{display:flex;align-items:center;gap:var(--ds-space-4);height:32px;width:100%;border:0;background:transparent;padding:0;font:var(--ds-text-ui);color:var(--ds-color-text-1);text-align:left} /* ds-allow: author-approved Pro prototype value 2026-11-08; proposed design-system addition, see README */
+.check-box{width:16px;height:16px;border-radius:var(--ds-radius-thumb);background:var(--ds-color-track);display:grid;place-items:center;flex:0 0 16px;transition:background var(--ds-motion-fast)} /* ds-allow: author-approved Pro prototype value 2026-11-08; proposed design-system addition, see README */
+.check-row[aria-checked=true] .check-box{background:var(--ds-color-accent)}
+.check-box svg{opacity:0}.check-row[aria-checked=true] .check-box svg{opacity:1}
+
+/* Reserve the footer as a single group. Its geometry never follows event state. */
+#playback-footer{position:absolute;inset:100% 0 auto;padding-top:var(--ds-space-5)}
+/* One plate, one height. Collapsed it is the Driving assist button; expanded it widens
+   around the same centre to at most --playback-max, so the controls stay grouped. */
+:root #canvas-playback{
+  --assist-height:calc(var(--ds-size-touch) - var(--ds-space-2)); /* Existing 40px desktop Driving assist button. */
+  --playback-max:520px; /* ds-allow: keeps play, track and time together on wide canvases */
+  --playback-wheel-size:20px; /* ds-allow: same assist wheel dimensions as the workbench */
+  --playback-label-inset:calc(var(--ds-space-6) + var(--playback-wheel-size) + var(--ds-space-4));
+  --playback-divider-width:1px; /* ds-allow: preserve the approved divider hairline */
+  --playback-surface-border:1px; /* ds-allow: preserve the original Driving assist border */
+  --playback-expanded-inset:max(0px,calc((100% - var(--playback-max)) / 2));
+  --playback-expanded-x:max(0px,calc((100cqw - var(--playback-max)) / 2));
+  --playback-compact-x:calc((100cqw - var(--playback-compact)) / 2);
+  --playback-slit:calc(var(--playback-compact-x) + var(--playback-label-inset) + var(--playback-divider-width));
+  --playback-divider-inset:calc(var(--playback-expanded-inset) + var(--playback-label-inset));
+  --playback-inset:var(--playback-expanded-inset);
+  --playback-radius:var(--ds-radius-control);
+  --playback-motion:calc(var(--ds-motion-base) * 2); /* ds-allow: 320ms lets the small overtravel read */
+  --playback-close-motion:calc(var(--ds-motion-base) + var(--ds-motion-press)); /* ds-allow: 270ms close */
+  --playback-lead:calc(var(--ds-motion-fast) / 2);
+  --playback-spring:linear(0,.13 12%,.42 27%,.72 43%,.92 58%,1 71%,1.012 82%,1); /* ds-allow: restore the shared playback curve with 1.2% overtravel */
+  --playback-close-spring:var(--ds-motion-ease);
+  /* Island-style content swap: leaving content softens and shrinks a touch, arriving content
+     sharpens from a blur and grows into place. */
+  --playback-blur-out:6px; /* ds-allow: island-style content blur */
+  --playback-scale-out:.94; /* ds-allow: island-style content scale */
+  position:relative;inset:auto;height:var(--assist-height);display:block;container-type:inline-size;
+}
+#canvas-playback[data-mode=assist]{--playback-inset:max(0px,calc((100% - var(--playback-compact)) / 2))}
+.playback-surface{position:absolute;inset:0;pointer-events:none}
+.playback-surface::before,.playback-surface::after{content:"";position:absolute;inset:0;transition:clip-path var(--playback-motion) var(--playback-spring)}
+.playback-surface::before{background:var(--ds-color-line-control);clip-path:inset(0 var(--playback-inset) round var(--playback-radius))}
+.playback-surface::after{background:var(--ds-color-raised);clip-path:inset(var(--playback-surface-border) calc(var(--playback-inset) + var(--playback-surface-border)) round calc(var(--playback-radius) - var(--playback-surface-border)))}
+:root[data-theme=dark] .playback-surface::before{background:var(--ds-color-line-strong)}
+:root[data-theme=dark] .playback-surface::after{background:var(--ds-color-face)}
+/* The assist button keeps its hit target while the visible wheel and label travel. */
+:root #artboard #canvas-playback #scene-transport{
+  position:absolute;inset:0 auto auto 0;z-index:1;display:flex;align-items:center;justify-content:center;width:max-content;min-width:0;height:var(--assist-height);gap:var(--ds-space-4);
+  padding-inline:var(--ds-space-6);color:var(--ds-color-text-1);font:var(--ds-text-ui);background:transparent;box-shadow:none;
+  transform:translateX(calc(50cqw - 50%));
+  opacity:1;filter:none;scale:1;
+  transition-property:opacity,filter,scale;transition-duration:var(--ds-motion-base);transition-timing-function:var(--ds-motion-ease-out);transition-delay:calc(var(--ds-motion-fast) * 2);
+}
+:root #canvas-playback #scene-transport::before{content:none}
+:root #artboard #canvas-playback[data-mode=timeline] #scene-transport{opacity:0;filter:blur(var(--playback-blur-out));scale:var(--playback-scale-out);pointer-events:none;transition-duration:var(--ds-motion-press);transition-timing-function:var(--ds-motion-ease);transition-delay:0s}
+/* The shared wheel: one element, moving on the plate's curve between its two homes. */
+.playback-wheel-space{width:var(--playback-wheel-size);height:var(--playback-wheel-size);flex:0 0 var(--playback-wheel-size)}
+.playback-leading{position:absolute;z-index:2;top:calc((var(--assist-height) - var(--playback-wheel-size)) / 2);left:0;pointer-events:none;
+  transform:translateX(calc(var(--playback-expanded-x) + var(--ds-space-6)));transition:transform var(--playback-motion) var(--playback-spring) var(--playback-lead)}
+#canvas-playback[data-mode=assist] .playback-leading{transform:translateX(calc(var(--playback-compact-x) + var(--ds-space-6)));
+  transition:transform var(--playback-close-motion) var(--playback-close-spring) var(--playback-lead)}
+.playback-wheel{display:block;width:var(--playback-wheel-size);height:var(--playback-wheel-size);border-radius:50%;pointer-events:auto;
+  background-color:var(--assist-disc-off);cursor:default;
+  transition:background-color var(--ds-motion-base) var(--ds-motion-ease)}
+/* Both vector glyphs already live in the wheel when its state changes. */
+.playback-wheel > svg{width:100%;height:100%;pointer-events:none}
+.playback-wheel > svg:first-child{display:var(--playback-wheel-off-display,block)}
+.playback-wheel > svg:last-child{display:var(--playback-wheel-on-display,none)}
+#canvas-playback[data-mode=assist] .playback-wheel{pointer-events:none}
+#canvas-playback[data-mode=timeline] .playback-wheel[role=button]{cursor:pointer;outline:var(--ds-space-1) solid var(--ds-color-accent-fill);outline-offset:var(--ds-space-1)}
+#canvas-playback[data-mode=timeline] .playback-wheel[role=button]::before{content:"";position:absolute;inset:calc(-1 * var(--ds-space-4));}
+#canvas-playback .playback-wheel[role=button]:focus-visible{outline:var(--ds-space-1) solid var(--ds-color-text-1);outline-offset:var(--ds-space-1)}
+#canvas-playback[data-mode=timeline] .playback-wheel,#canvas-playback:has(#scene-transport[aria-checked=true]) .playback-wheel{
+  background-color:var(--ds-color-accent-fill);
+  --playback-wheel-off-display:none;
+  --playback-wheel-on-display:block;
+}
+.playback-label-measure{white-space:nowrap;visibility:hidden}
+.playback-label{display:none}
+#canvas-playback .playback-surface::before,#canvas-playback .playback-surface::after{transition-delay:var(--playback-lead)}
+#event-timeline{
+  position:absolute;inset:0;display:flex;align-items:center;gap:var(--ds-space-4);
+  padding-inline:calc(var(--playback-expanded-inset) + var(--ds-space-6));
+  padding-inline-start:calc(var(--playback-divider-inset) + var(--playback-divider-width) + var(--ds-space-1) + var(--ds-space-4));
+  /* The play button and track open from the centre outward on the plate's
+     curve, pushing the wheel left and the words right. Collapsed it is a zero-width slit in the gap
+     between the wheel and the words, so its edges travel with them. */
+  clip-path:inset(0 calc(100% - var(--playback-slit)) 0 var(--playback-slit));opacity:0;filter:blur(var(--playback-blur-out));pointer-events:none;
+  transition:clip-path var(--playback-close-motion) var(--playback-close-spring) var(--playback-lead),opacity var(--ds-motion-press) var(--ds-motion-ease) var(--ds-motion-base),filter var(--playback-close-motion) var(--ds-motion-ease) var(--playback-lead);
+}
+.tl-divider{
+  /* Travel with the wheel, outside the track's clip and blur. */
+  position:absolute;top:0;left:calc(var(--playback-wheel-size) + var(--ds-space-4));
+  width:var(--playback-divider-width);height:var(--playback-wheel-size);pointer-events:none;
+  background:color-mix(in srgb,var(--ds-color-text-3) 55%,transparent); /* ds-allow: approved divider color and opacity */
+  scale:1 .1;opacity:0;
+  transition:scale var(--ds-motion-press) var(--ds-motion-ease),opacity var(--ds-motion-press) var(--ds-motion-ease);
+}
+#canvas-playback[data-mode=timeline] .tl-divider{
+  scale:1;opacity:1;
+  transition:scale var(--ds-motion-base) var(--ds-motion-ease) var(--ds-motion-press),opacity var(--ds-motion-base) var(--ds-motion-ease) var(--ds-motion-press);
+}
+#canvas-playback[data-mode=timeline] #event-timeline{
+  clip-path:inset(0 calc(var(--playback-expanded-inset) + var(--ds-space-6) + var(--playback-time-w)) 0 calc(var(--playback-divider-inset) + var(--playback-divider-width)));
+  opacity:1;filter:none;pointer-events:auto;
+  /* While it opens, the block sharpens from a blur, finishing with the plate. */
+  transition:clip-path var(--playback-motion) var(--playback-spring) var(--playback-lead),opacity var(--ds-motion-base) var(--ds-motion-ease) var(--playback-lead),filter var(--playback-motion) var(--ds-motion-ease-out) var(--playback-lead)}
+#canvas-playback[data-mode=assist] .playback-surface::before,#canvas-playback[data-mode=assist] .playback-surface::after{transition-duration:var(--playback-close-motion);transition-timing-function:var(--playback-close-spring)}
+:root #artboard #canvas-playback[data-motion=instant] :is(#scene-transport,.playback-label,#event-timeline,.playback-leading,.playback-wheel,.tl-divider),
+#canvas-playback[data-motion=instant] .playback-surface::before,#canvas-playback[data-motion=instant] .playback-surface::after{transition:none}
+@media (prefers-reduced-motion:reduce){
+  #interaction-settings[data-motion=live] .event-disclosure{transition:none}
+  :root #artboard #canvas-playback :is(#scene-transport,#event-timeline),#canvas-playback .playback-surface::before,#canvas-playback .playback-surface::after{transition:opacity var(--ds-motion-fast) var(--ds-motion-ease)}
+  #canvas-playback[data-mode] :is(.playback-leading,.tl-divider){transition:none}
+}
+.tl-play{width:32px;height:32px;flex:0 0 32px;border:0;padding:0;border-radius:var(--ds-radius-control);background:transparent;color:var(--ds-color-text-1);display:grid;place-items:center;transition:background var(--ds-motion-fast)} /* ds-allow: author-approved Pro prototype value 2026-11-08; proposed design-system addition, see README */
+@media (hover:hover) and (pointer:fine){.tl-play:hover{background:var(--ds-color-track)}}
+.tl-play:active{transform:scale(var(--ds-motion-press-scale))}
+.tl-body{flex:1;min-width:0;height:32px;display:flex;align-items:center;padding:0 var(--ds-space-3)} /* ds-allow: author-approved Pro prototype value 2026-11-08; proposed design-system addition, see README */
+.tl-track{position:relative;height:4px;width:100%} /* ds-allow: author-approved Pro prototype value 2026-11-08; proposed design-system addition, see README */
+.tl-track{background:var(--ds-color-track);border-radius:var(--ds-radius-pill)}
+:root[data-theme=dark] .tl-track{background:var(--ds-color-selected)}
+.tl-progress{position:absolute;inset:0 auto 0 0;width:var(--timeline-progress);background:var(--ds-color-accent);border-radius:inherit}
+.tl-thumb{position:absolute;top:50%;left:var(--timeline-progress);width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:#FFFFFF;box-shadow:0 0 0 .5px rgba(0,0,0,.14),0 1px 3px rgba(0,0,0,.24);pointer-events:none;transition:width var(--ds-motion-fast),height var(--ds-motion-fast),margin var(--ds-motion-fast)} /* ds-allow: author-approved Pro prototype value 2026-11-08; proposed design-system addition, see README */
+.tl-body:hover .tl-thumb,.tl-range:focus-visible+.tl-thumb{width:14px;height:14px;margin:-7px 0 0 -7px} /* ds-allow: author-approved Pro prototype value 2026-11-08; proposed design-system addition, see README */
+.tl-range{position:absolute;left:-7px;right:-7px;top:-16px;height:36px;width:calc(100% + 14px);margin:0;opacity:0;cursor:pointer} /* ds-allow: author-approved Pro prototype value 2026-11-08; proposed design-system addition, see README */
+.tl-range:focus-visible+.tl-thumb{outline:2px solid var(--ds-color-text-1);outline-offset:2px} /* ds-allow: author-approved Pro prototype value 2026-11-08; proposed design-system addition, see README */
+.tl-readout{flex:0 0 var(--playback-time-w)} /* holds the place the travelling time lands in */
+.tl-time{text-align:right;font:var(--ds-text-ui);font-variant-numeric:tabular-nums;color:var(--ds-color-text-2)} /* ds-allow: 44px fits "10.0 s" in tabular figures, so the time never shifts */
+.tl-play:focus-visible,.check-row:focus-visible,.format-options button:focus-visible{outline:2px solid var(--ds-color-text-1);outline-offset:2px} /* ds-allow: author-approved Pro prototype value 2026-11-08; proposed design-system addition, see README */
+
+/* Guide line under the timeline */
+#tl-guide{display:none;box-sizing:content-box;height:2lh;padding-top:var(--ds-space-5);justify-items:center;align-items:start;pointer-events:none;font:var(--ds-text-meta);opacity:0;transition:opacity var(--ds-motion-fast) var(--ds-motion-ease)}
+#playback-footer[data-reserve-guide=true] #tl-guide{display:grid}
+#canvas-playback[data-mode=timeline]~#tl-guide{opacity:1}
+#tl-guide p{grid-area:1/1;margin:0;max-width:560px;text-align:center;font:var(--ds-text-meta);color:var(--ds-color-text-2)} /* ds-allow: author-approved Pro prototype value 2026-11-08; proposed design-system addition, see README */
+#tl-guide p.in{animation:tl-guide-in var(--ds-motion-enter) var(--ds-motion-ease-out) both}
+#tl-guide p.out{animation:tl-guide-out var(--ds-motion-base) var(--ds-motion-ease) both}
+@keyframes tl-guide-in{from{opacity:0}to{opacity:1}}
+@keyframes tl-guide-out{from{opacity:1}to{opacity:0}}
+@media (prefers-reduced-motion:reduce){#tl-guide p.in{animation:none}#tl-guide p.out{display:none}}
+#tl-guide b{font:var(--ds-text-ui-strong);line-height:18px;color:var(--ds-color-text-1);margin-right:6px} /* ds-allow: author-approved Pro prototype value 2026-11-08; proposed design-system addition, see README */
+
+@media(max-width:479px) and (max-height:400px){ /* ds-allow: Below the two-column phone breakpoint, keep the settings reachable with a short viewport. */
+ :root .workspace{overflow-y:auto;grid-template-rows:var(--ds-size-touch) minmax(var(--ds-space-14),42dvh) max-content!important}
+ :root #inspector{display:block}
+ :root #inspector-scroll{overflow:visible;mask-image:none}
+}
+
+/* Spacing model change (author review 2026-11-08): item-to-item 32 -> 36, label column 56 -> 64 (SPEC .ds-prop) */
+html #inspector .property{height:36px;min-height:36px} /* ds-allow: author-approved Pro prototype value 2026-11-08; proposed design-system addition, see README */
+html #inspector .property-label{width:64px;min-width:64px;flex:0 0 64px} /* ds-allow: author-approved Pro prototype value 2026-11-08; proposed design-system addition, see README */
+/* Offset the first stacked label to line up with the text inside a switch row
+   below a heading. Keep this separate from the gap inside each field. */
+#inspector{
+  --preset-heading-offset:calc(var(--ds-space-4) + var(--ds-space-1));
+  --preset-label-gap:var(--ds-space-2);
+  --preset-field-gap:var(--ds-space-5);
+  --preset-control-height:calc(var(--ds-size-control) + var(--ds-space-2));
+  --preset-button-height:calc(var(--preset-control-height) - var(--ds-size-thumb-inset) * 2)
+}
+html #inspector :is(#scene-properties,#shared-weather){padding-block-start:var(--preset-heading-offset)}
+html #inspector #scene-properties{gap:var(--preset-field-gap)}
+html #inspector :is(#scene-properties>.property,#shared-weather,#interaction-settings .event-params>.property){
+  grid-template-columns:minmax(0,1fr);height:auto;min-height:0;row-gap:var(--preset-label-gap);align-items:start
+}
+html #inspector :is(#scene-properties,#interaction-settings .event-params) .property-label{
+  width:auto;min-width:0
+}
+:root #inspector :is(.segment,.shared-weather-options){height:var(--preset-control-height)}
+:root #inspector :is(.segment button,.shared-weather-options button,.segment-indicator){height:var(--preset-button-height)}
+:root #inspector .segment[data-param=camera]{
+  display:grid;grid-auto-flow:column;grid-auto-columns:minmax(max-content,1fr);gap:var(--ds-space-2)
+}
+:root #inspector .segment[data-param=camera] button{padding-inline:var(--ds-space-4)}
+:root #inspector .segment[data-param=camera] [data-value=parked]{padding-inline:var(--ds-space-5)}
+:root #inspector .segment button[aria-disabled=true]{
+  color:var(--ds-color-text-3);cursor:default
+}
+@media(max-width:639px), (max-width:959px) and (orientation:portrait){ /* ds-allow: Match the workbench's existing stacked-field breakpoints. */
+  #inspector{
+    --preset-heading-offset:var(--ds-space-4);
+    --preset-label-gap:var(--ds-space-3);
+    --preset-field-gap:var(--ds-space-6);
+    --preset-control-height:calc(var(--ds-size-touch) + var(--ds-space-1))
+  }
+}
+html #inspector #layers .layer-row{height:36px;min-height:36px} /* ds-allow: author-approved Pro prototype value 2026-11-08; proposed design-system addition, see README */
+
+/* Replay reuses the Junction end-of-playback icon */
+.tl-replay{width:16px;height:16px;display:block;background:currentColor;-webkit-mask:url("./replay.svg") center/contain no-repeat;mask:url("./replay.svg") center/contain no-repeat} /* ds-allow: author-approved Pro prototype value 2026-11-08; proposed design-system addition, see README */
+.toolbar .project-name{margin-right:auto}
+
+#tooltip{white-space:pre}
+/* Camera during an event: a plain value in the control column, aligned with select text. */
+/* New run: the playhead slides back to 0. */
+/* Same 720ms and in-out shape as the engine's camera handoff, so bar and picture land together. */
+#event-timeline.is-resetting .tl-progress{transition:width var(--playback-handoff) var(--playback-handoff-ease)}
+#event-timeline.is-resetting .tl-thumb{transition:left var(--playback-handoff) var(--playback-handoff-ease)}
+:root{--playback-handoff:720ms;--playback-handoff-ease:cubic-bezier(.45,0,.55,1)} /* ds-allow: mirrors the engine camera handoff (720ms smootherstep) */
+/* Phase boundaries appear only while the pointer is over the track, as hairline gaps. */
+.tl-notches{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity var(--ds-motion-fast) var(--ds-motion-ease)}
+.tl-notches span{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--ds-color-raised)} /* ds-allow: hairline gap in a 4px track */
+:root[data-theme=dark] .tl-notches span{background:var(--ds-color-face)}
+.tl-body:hover .tl-notches{opacity:1}
+/* Stop-and-wait: the track breaks into dots while the vehicle stands still; the ring marks its release. */
+.tl-wait{position:absolute;top:0;bottom:0;pointer-events:none;--tl-cut:var(--ds-color-raised);background:radial-gradient(circle at 3px 50%,transparent 1.5px,var(--tl-cut) 2px) 0 0/6px 100% repeat-x} /* ds-allow: dot pitch and radius drawn inside a 4px track */
+:root[data-theme=dark] .tl-wait{--tl-cut:var(--ds-color-face)}
+.tl-release{position:absolute;top:50%;width:8px;height:8px;margin:-4px 0 0 -4px;box-sizing:border-box;border-radius:50%;pointer-events:none;background:var(--ds-color-raised);border:1.5px solid var(--ds-color-text-3);transition:background var(--ds-motion-fast) var(--ds-motion-ease),border-color var(--ds-motion-fast) var(--ds-motion-ease)} /* ds-allow: 8px marker on a 4px track, 1.5px ring */
+:root[data-theme=dark] .tl-release{background:var(--ds-color-face)}
+#event-timeline[data-wait=in] .tl-release{border-color:var(--ds-color-text-1)}
+#event-timeline[data-wait=after] .tl-release{background:var(--ds-color-accent);border-color:var(--ds-color-accent)}
+/* Narrow desktop library: a smaller thumbnail leaves room for the full vehicle name. */
+@media (max-width:1179px){ /* ds-allow: matches the workbench narrow-library breakpoint */
+  :root .shell-vehicle-card .thumb{width:var(--ds-space-10)}
+  :root .shell-vehicle-card .thumb img{width:var(--ds-space-10);height:auto}
+}
+/* State swaps settle instead of popping. */
+@keyframes proto-fade-in{from{opacity:0}to{opacity:1}}
+@keyframes proto-icon-in{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:none}}
+#scene-properties .segment[data-param=camera]:not([hidden]){animation:proto-fade-in var(--ds-motion-base) var(--ds-motion-ease)}
+#layers .layer-row{transition:opacity var(--ds-motion-base) var(--ds-motion-ease)}
+#tl-play svg{animation:proto-icon-in var(--ds-motion-base) var(--ds-motion-ease-out)}
+@media (prefers-reduced-motion:reduce){#scene-properties .segment[data-param=camera],#tl-play svg{animation:none}}
+/* Dragging: the thumb grows and the phase gaps show, as on macOS sliders. */
+.tl-range:active+.tl-thumb{width:16px;height:16px;margin:-8px 0 0 -8px} /* ds-allow: pressed thumb size */
+.tl-track:has(.tl-range:active) .tl-notches{opacity:1}
+#inspector-scroll.scene-in{animation:proto-fade-in var(--ds-motion-base) var(--ds-motion-ease)}
+@media (prefers-reduced-motion:reduce){#inspector-scroll.scene-in{animation:none}}
+@media (prefers-reduced-motion:reduce){:root #artboard #canvas-playback #scene-transport,#event-timeline{filter:none!important;scale:1!important}#event-timeline{clip-path:none!important}}
+@media (prefers-reduced-motion:reduce){#canvas-playback .playback-wheel{scale:1!important}}
+/* The travelling words. Collapsed they sit where the button's label is; expanded they sit in the
+   time slot at the right end. Box and words move on the plate's curve; the label hands over to the
+   time during the travel, shrinking slightly as it goes. */
+:root #canvas-playback{--playback-time-w:44px} /* ds-allow: fits "10.0 s" in tabular figures */
+.playback-text{position:absolute;z-index:2;top:0;height:var(--assist-height);display:grid;grid-template-columns:minmax(0,1fr);align-items:center;pointer-events:none;
+  left:0;transform:translateX(calc(100cqw - var(--playback-expanded-x) - var(--ds-space-6) - var(--playback-time-w)));width:var(--playback-time-w);
+  transition:transform var(--playback-motion) var(--playback-spring) var(--playback-lead),width var(--playback-motion) var(--playback-spring) var(--playback-lead)}
+#canvas-playback[data-mode=assist] .playback-text{transform:translateX(calc(var(--playback-compact-x) + var(--playback-label-inset)));width:var(--playback-label-w);
+  transition-duration:var(--playback-close-motion);transition-timing-function:var(--playback-close-spring)}
+.playback-text>span{grid-area:1/1;white-space:nowrap;font:var(--ds-text-ui);transition-property:opacity,filter,scale;transition-timing-function:var(--ds-motion-ease-out)}
+.pt-label{justify-self:start;transform-origin:left center;color:var(--ds-color-text-1)}
+.pt-time{justify-self:end;transform-origin:right center;font-variant-numeric:tabular-nums;color:var(--ds-color-text-2)}
+/* expanded: time shown */
+#canvas-playback .pt-label{opacity:0;filter:blur(var(--playback-blur-out));scale:var(--playback-scale-out);transition-duration:var(--ds-motion-base);transition-delay:var(--playback-lead)}
+#canvas-playback .pt-time{opacity:1;filter:none;scale:1;transition-duration:var(--ds-motion-base);transition-delay:var(--ds-motion-fast)}
+/* collapsed: label shown */
+#canvas-playback[data-mode=assist] .pt-time{opacity:0;filter:blur(var(--playback-blur-out));scale:var(--playback-scale-out);transition-delay:0s}
+#canvas-playback[data-mode=assist] .pt-label{opacity:1;filter:none;scale:1;transition-delay:var(--ds-motion-press)}
+:root #artboard #canvas-playback[data-motion=instant] :is(.playback-text,.playback-text>span){transition:none}
+@media (prefers-reduced-motion:reduce){.playback-text{transition:none}.playback-text>span{filter:none!important;scale:1!important}}
